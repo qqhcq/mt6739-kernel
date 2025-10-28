@@ -7,168 +7,147 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04  # 使用 20.04 版本更稳定
+    runs-on: ubuntu-20.04
+    timeout-minutes: 120
     
     steps:
-    - name: 克隆完整的 Kernel 源码
+    - name: 最大化构建空间
       run: |
-        git clone --depth=1 --single-branch --branch master https://github.com/5059d/kernel_5059d_mt6739_tcl.git
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        df -h
+        
+    - name: 克隆 Kernel 源码
+      run: |
+        git clone --depth=1 https://github.com/5059d/kernel_5059d_mt6739_tcl.git
         cd kernel_5059d_mt6739_tcl/kernel-4.4
-        pwd
-        ls -la
-        echo "Checking for scripts directory..."
-        ls -la scripts/ | head -20
-        echo "Checking defconfig..."
-        ls -la arch/arm64/configs/ | grep k39tv1
-      
-    - name: 安装依赖
+        echo "源码克隆完成"
+        ls -lah
+        
+    - name: 安装编译依赖
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev python3 python-is-python3
         
     - name: 下载交叉编译工具链
       run: |
-        wget -P /home/runner https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-        tar -C /home/runner -xf /home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-    
-    - name: 修复 Python 2 兼容性问题
+        wget -q https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+        tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+        echo "TOOLCHAIN_PATH=$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-" >> $GITHUB_ENV
+        
+    - name: 修复 Python 2/3 兼容性
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
         
-        echo "=== 修复 MediaTek drvgen Python 脚本 ==="
-        
-        # 修复 DrvGen.py 中的 cmp() 函数问题
+        # 修复 tools/dct/DrvGen.py
         if [ -f "tools/dct/DrvGen.py" ]; then
-          echo "修复 tools/dct/DrvGen.py..."
-          # 添加 cmp 函数定义（Python 3 兼容）
-          sed -i '1i def cmp(a, b):\n    return (a > b) - (a < b)\n' tools/dct/DrvGen.py
-          # 修复 print 语句
-          sed -i 's/print \(.*\)/print(\1)/g' tools/dct/DrvGen.py
-          # 修复 file() 改为 open()
-          sed -i 's/\bfile(/open(/g' tools/dct/DrvGen.py
+          echo "修复 tools/dct/DrvGen.py"
+          # 在文件开头添加 cmp 函数
+          echo 'def cmp(a, b):
+    return (a > b) - (a < b)
+' | cat - tools/dct/DrvGen.py > temp && mv temp tools/dct/DrvGen.py
+          # 修复 print 语句 - 只修复明确的 print 语句
+          sed -i "s/print '/print('/g" tools/dct/DrvGen.py
+          sed -i 's/print "/print("/g' tools/dct/DrvGen.py
+          sed -i 's/, *$/)/g' tools/dct/DrvGen.py
         fi
         
-        # 修复所有 Python 脚本的常见问题
-        find scripts/drvgen tools/dct drivers/misc/mediatek -name '*.py' 2>/dev/null | while read file; do
-          echo "处理文件: $file"
-          # 添加 cmp 函数（如果文件中使用了 cmp）
-          if grep -q '\bcmp(' "$file" 2>/dev/null; then
-            if ! grep -q 'def cmp(a, b):' "$file"; then
-              sed -i '1i def cmp(a, b):\n    return (a > b) - (a < b)\n' "$file"
-            fi
-          fi
-          # 修复 print 语句（简单替换）
-          sed -i 's/print \([^(]\)/print(\1)/g' "$file"
-          # 修复 file() 改为 open()
-          sed -i 's/\bfile(/open(/g' "$file"
-        done
-        
-        echo "=== Python 脚本修复完成 ==="
-        python --version
-        
-    - name: 修复 DTC yylloc 重复定义问题
-      run: |
-        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        # 修复 DTC yylloc 问题
         if [ -f "scripts/dtc/dtc-lexer.lex.c" ]; then
-          echo "修复 DTC yylloc 问题..."
+          echo "修复 DTC yylloc"
           sed -i 's/^YYLTYPE yylloc;$/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c
         fi
+        
+        echo "修复完成"
         
     - name: 配置 Kernel
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
-        TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
-        echo "TOOLCHAIN=$TOOLCHAIN"
-        ${TOOLCHAIN}gcc --version
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" k39tv1_64_bsp_defconfig
-        # 使用 yes "" 自动回答所有配置问题（使用默认值）
-        yes "" | make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" oldconfig || true
+        make ARCH=arm64 CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} k39tv1_64_bsp_defconfig
+        # 自动应用默认配置
+        yes "" | make ARCH=arm64 CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} oldconfig || true
         
-    - name: 编译 Kernel  
+    - name: 编译 Kernel
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
-        TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
-        echo "开始编译 kernel..."
+        echo "开始编译..."
         
-        # 先准备编译环境
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" prepare
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" modules_prepare  
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" SUBDIRS=scripts
-        
-        # 编译 Image（如果这步失败，显示详细错误）
-        echo "=== 开始编译 kernel Image ==="
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" arch/arm64/boot/Image -j$(nproc) 2>&1 | tee build.log
-        
-        # 如果 Image 编译失败，尝试编译 vmlinux
-        if [ ! -f arch/arm64/boot/Image ]; then
-          echo "=== Image 编译失败，尝试编译 vmlinux ==="
-          make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" vmlinux -j$(nproc) || {
-            echo "=== 编译失败，显示最后 100 行日志 ==="
-            tail -n 100 build.log
-            exit 1
-          }
+        # 尝试编译 Image
+        if make ARCH=arm64 CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} -j$(nproc) Image 2>&1 | tee build.log; then
+          echo "✅ Image 编译成功"
+        else
+          echo "⚠️ Image 编译失败，尝试编译 vmlinux"
+          make ARCH=arm64 CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} -j$(nproc) vmlinux 2>&1 | tee -a build.log
         fi
         
-    - name: 检查编译结果
+    - name: 检查编译产物
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
-        echo "Checking for kernel images..."
-        ls -lh arch/arm64/boot/ || true
-        ls -lh vmlinux || true
+        echo "=== 检查编译结果 ==="
         
         if [ -f arch/arm64/boot/Image.gz-dtb ]; then
-          echo "✅ Kernel 编译成功（Image.gz-dtb）！"
+          echo "✅ 找到 Image.gz-dtb"
           ls -lh arch/arm64/boot/Image.gz-dtb
+          cp arch/arm64/boot/Image.gz-dtb ../kernel_image
         elif [ -f arch/arm64/boot/Image.gz ]; then
-          echo "✅ Kernel 编译成功（Image.gz）！"
+          echo "✅ 找到 Image.gz"
           ls -lh arch/arm64/boot/Image.gz
+          cp arch/arm64/boot/Image.gz ../kernel_image
         elif [ -f arch/arm64/boot/Image ]; then
-          echo "✅ Kernel 编译成功（Image）！"
+          echo "✅ 找到 Image"
           ls -lh arch/arm64/boot/Image
+          cp arch/arm64/boot/Image ../kernel_image
         elif [ -f vmlinux ]; then
-          echo "⚠️  生成了 vmlinux，但缺少 Image 文件"
+          echo "⚠️ 只找到 vmlinux"
           ls -lh vmlinux
+          cp vmlinux ../kernel_image
         else
-          echo "❌ 编译失败！未找到 kernel 文件"
+          echo "❌ 未找到任何 kernel 文件"
+          tail -n 100 build.log
           exit 1
         fi
         
-    - name: 打包 Kernel
-      run: |
-        cd kernel_5059d_mt6739_tcl/kernel-4.4
-        mkdir -p kernel-output
-        
-        # 优先打包 Image 文件
-        if [ -f arch/arm64/boot/Image.gz-dtb ]; then
-          cp arch/arm64/boot/Image.gz-dtb kernel-output/kernel
-          echo "Packaged: Image.gz-dtb"
-        elif [ -f arch/arm64/boot/Image.gz ]; then
-          cp arch/arm64/boot/Image.gz kernel-output/kernel
-          echo "Packaged: Image.gz"
-        elif [ -f arch/arm64/boot/Image ]; then
-          cp arch/arm64/boot/Image kernel-output/kernel
-          echo "Packaged: Image"
-        elif [ -f vmlinux ]; then
-          cp vmlinux kernel-output/vmlinux
-          echo "Packaged: vmlinux (需要手动转换为 Image)"
-        fi
-        
-        cd kernel-output
-        ls -lh
-        tar -czf mt6739-kernel-acm.tar.gz *
-        
-    - name: 上传编译产物
+    - name: 上传 Kernel
       uses: actions/upload-artifact@v4
       with:
-        name: mt6739-kernel-with-acm
-        path: kernel_5059d_mt6739_tcl/kernel-4.4/kernel-output/mt6739-kernel-acm.tar.gz
+        name: mt6739-kernel-acm
+        path: kernel_5059d_mt6739_tcl/kernel_image
+        retention-days: 7
+        
+    - name: 上传编译日志
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: kernel_5059d_mt6739_tcl/kernel-4.4/build.log
+        retention-days: 3
         
     - name: 创建 Release
-      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: kernel-${{ github.run_number }}
-        files: kernel_5059d_mt6739_tcl/kernel-4.4/kernel-output/mt6739-kernel-acm.tar.gz
+        tag_name: v1.0-${{ github.run_number }}
+        name: MT6739 Kernel with ACM - Build ${{ github.run_number }}
+        body: |
+          ## MT6739 Kernel with USB ACM Support
+          
+          **Build Number:** ${{ github.run_number }}
+          **Build Date:** ${{ github.event.head_commit.timestamp }}
+          **Commit:** ${{ github.sha }}
+          
+          ### Features
+          - ✅ USB ACM (Serial) Support
+          - ✅ USB ADB Support  
+          - ✅ USB MTP Support
+          
+          ### Usage
+          1. Download kernel_image
+          2. Replace kernel in your boot.img
+          3. Repack boot.img
+          4. Flash to device
+          
+        files: kernel_5059d_mt6739_tcl/kernel_image
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
