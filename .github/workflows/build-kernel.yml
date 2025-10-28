@@ -10,8 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v3
+    - name: 克隆完整的 Kernel 源码
+      run: |
+        git clone --depth=1 --single-branch --branch master https://github.com/5059d/kernel_5059d_mt6739_tcl.git
+        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        pwd
+        ls -la
+        echo "Checking for scripts directory..."
+        ls -la scripts/ | head -20
+        echo "Checking defconfig..."
+        ls -la arch/arm64/configs/ | grep k39tv1
       
     - name: 安装依赖
       run: |
@@ -25,24 +33,21 @@ jobs:
         
     - name: 配置 Kernel
       run: |
-        pwd
-        ls -la
-        echo "Checking defconfig..."
-        ls -la arch/arm64/configs/ | grep k39tv1
+        cd kernel_5059d_mt6739_tcl/kernel-4.4
         TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
         echo "TOOLCHAIN=$TOOLCHAIN"
-        echo "Testing toolchain..."
-        ${TOOLCHAIN}gcc --version || echo "Toolchain not found!"
-        echo "Running: make ARCH=arm64 CROSS_COMPILE=$TOOLCHAIN k39tv1_64_bsp_defconfig"
+        ${TOOLCHAIN}gcc --version
         make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" k39tv1_64_bsp_defconfig
         
     - name: 编译 Kernel
       run: |
+        cd kernel_5059d_mt6739_tcl/kernel-4.4
         TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
         make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" -j$(nproc)
         
     - name: 检查编译结果
       run: |
+        cd kernel_5059d_mt6739_tcl/kernel-4.4
         if [ -f arch/arm64/boot/Image.gz-dtb ]; then
           echo "✅ Kernel 编译成功！"
           ls -lh arch/arm64/boot/Image.gz-dtb
@@ -56,6 +61,7 @@ jobs:
         
     - name: 打包 Kernel
       run: |
+        cd kernel_5059d_mt6739_tcl/kernel-4.4
         mkdir -p kernel-output
         if [ -f arch/arm64/boot/Image.gz-dtb ]; then
           cp arch/arm64/boot/Image.gz-dtb kernel-output/kernel
@@ -69,14 +75,14 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: mt6739-kernel-with-acm
-        path: kernel-output/mt6739-kernel-acm.tar.gz
+        path: kernel_5059d_mt6739_tcl/kernel-4.4/kernel-output/mt6739-kernel-acm.tar.gz
         
     - name: 创建 Release
       if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
       uses: softprops/action-gh-release@v1
       with:
         tag_name: kernel-${{ github.run_number }}
-        files: kernel-output/mt6739-kernel-acm.tar.gz
+        files: kernel_5059d_mt6739_tcl/kernel-4.4/kernel-output/mt6739-kernel-acm.tar.gz
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
