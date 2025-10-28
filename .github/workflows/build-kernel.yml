@@ -38,6 +38,9 @@ jobs:
         echo "TOOLCHAIN=$TOOLCHAIN"
         ${TOOLCHAIN}gcc --version
         make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" k39tv1_64_bsp_defconfig
+        # 禁用 DTB 编译（避免 drvgen 和硬件特定问题）
+        scripts/config --disable CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE
+        scripts/config --disable CONFIG_BUILD_ARM64_DTB_OVERLAY_IMAGE_NAMES
         
     - name: 修复 DTC 编译问题
       run: |
@@ -49,7 +52,8 @@ jobs:
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
         TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" Image -j$(nproc)
+        # 只编译 Image，不编译 dtbs
+        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" KBUILD_IMAGE=arch/arm64/boot/Image Image -j$(nproc)
         
     - name: 检查编译结果
       run: |
