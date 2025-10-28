@@ -46,10 +46,12 @@ jobs:
         cd kernel_5059d_mt6739_tcl/kernel-4.4
         # 修复 DTC yylloc 重复定义问题
         sed -i 's/^YYLTYPE yylloc;$/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c || true
-        # 修复 MediaTek drvgen Python 2 → 3
+        # 修复 MediaTek Python 2 → 3（转换所有 Python 脚本）
         echo "Converting Python 2 scripts to Python 3..."
-        find scripts/drvgen -name '*.py' -exec 2to3 -w {} \; || true
-        # 确保 python 命令可用
+        find tools/dct -name '*.py' -exec 2to3 -w -n {} \; 2>/dev/null || true
+        find scripts/drvgen -name '*.py' -exec 2to3 -w -n {} \; 2>/dev/null || true
+        find drivers/misc/mediatek -name '*.py' -exec 2to3 -w -n {} \; 2>/dev/null || true
+        echo "Python conversion completed"
         python --version
         
     - name: 编译 Kernel  
