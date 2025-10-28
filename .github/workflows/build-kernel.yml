@@ -51,9 +51,13 @@ jobs:
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
         TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
-        # 只编译 vmlinux 和 Image，跳过 dtbs 和其他模块
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" vmlinux -j$(nproc) || true
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" arch/arm64/boot/Image -j$(nproc) || true
+        echo "开始编译 kernel..."
+        # 先尝试编译 vmlinux
+        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" prepare
+        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" modules_prepare  
+        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" SUBDIRS=scripts
+        # 编译 Image（显示错误）
+        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" arch/arm64/boot/Image -j$(nproc)
         
     - name: 检查编译结果
       run: |
