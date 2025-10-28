@@ -20,10 +20,8 @@ jobs:
         
     - name: 下载交叉编译工具链
       run: |
-        cd /home/runner
-        wget https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-        tar xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-        echo "CROSS_COMPILE=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-" >> $GITHUB_ENV
+        wget -P /home/runner https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+        tar -C /home/runner -xf /home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
         
     - name: 配置 Kernel
       run: |
