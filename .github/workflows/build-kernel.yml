@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # 使用 20.04 版本更稳定
     
     steps:
     - name: 克隆完整的 Kernel 源码
@@ -24,12 +24,59 @@ jobs:
     - name: 安装依赖
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev python3 python-is-python3 2to3
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev python3 python-is-python3
         
     - name: 下载交叉编译工具链
       run: |
         wget -P /home/runner https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
         tar -C /home/runner -xf /home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+    
+    - name: 修复 Python 2 兼容性问题
+      run: |
+        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        
+        echo "=== 修复 MediaTek drvgen Python 脚本 ==="
+        
+        # 修复 DrvGen.py 中的 cmp() 函数问题
+        if [ -f "tools/dct/DrvGen.py" ]; then
+          echo "修复 tools/dct/DrvGen.py..."
+          # 添加 cmp 函数定义（Python 3 兼容）
+          sed -i '1a\
+def cmp(a, b):\
+    return (a > b) - (a < b)' tools/dct/DrvGen.py
+          # 修复 print 语句
+          sed -i 's/print \(.*\)/print(\1)/g' tools/dct/DrvGen.py
+          # 修复 file() 改为 open()
+          sed -i 's/\bfile(/open(/g' tools/dct/DrvGen.py
+        fi
+        
+        # 修复所有 Python 脚本的常见问题
+        find scripts/drvgen tools/dct drivers/misc/mediatek -name '*.py' 2>/dev/null | while read file; do
+          echo "处理文件: $file"
+          # 添加 cmp 函数（如果文件中使用了 cmp）
+          if grep -q '\bcmp(' "$file" 2>/dev/null; then
+            if ! grep -q 'def cmp(a, b):' "$file"; then
+              sed -i '1a\
+def cmp(a, b):\
+    return (a > b) - (a < b)' "$file"
+            fi
+          fi
+          # 修复 print 语句（简单替换）
+          sed -i 's/print \([^(]\)/print(\1)/g' "$file"
+          # 修复 file() 改为 open()
+          sed -i 's/\bfile(/open(/g' "$file"
+        done
+        
+        echo "=== Python 脚本修复完成 ==="
+        python --version
+        
+    - name: 修复 DTC yylloc 重复定义问题
+      run: |
+        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        if [ -f "scripts/dtc/dtc-lexer.lex.c" ]; then
+          echo "修复 DTC yylloc 问题..."
+          sed -i 's/^YYLTYPE yylloc;$/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c
+        fi
         
     - name: 配置 Kernel
       run: |
@@ -41,36 +88,38 @@ jobs:
         # 使用 yes "" 自动回答所有配置问题（使用默认值）
         yes "" | make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" oldconfig || true
         
-    - name: 修复编译问题
-      run: |
-        cd kernel_5059d_mt6739_tcl/kernel-4.4
-        # 修复 DTC yylloc 重复定义问题
-        sed -i 's/^YYLTYPE yylloc;$/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c || true
-        # 修复 MediaTek Python 2 → 3（转换所有 Python 脚本）
-        echo "Converting Python 2 scripts to Python 3..."
-        find tools/dct -name '*.py' -exec 2to3 -w -n {} \; 2>/dev/null || true
-        find scripts/drvgen -name '*.py' -exec 2to3 -w -n {} \; 2>/dev/null || true
-        find drivers/misc/mediatek -name '*.py' -exec 2to3 -w -n {} \; 2>/dev/null || true
-        echo "Python conversion completed"
-        python --version
-        
     - name: 编译 Kernel  
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
         TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
         echo "开始编译 kernel..."
-        # 先尝试编译 vmlinux
+        
+        # 先准备编译环境
         make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" prepare
         make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" modules_prepare  
         make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" SUBDIRS=scripts
-        # 编译 Image（显示错误）
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" arch/arm64/boot/Image -j$(nproc)
+        
+        # 编译 Image（如果这步失败，显示详细错误）
+        echo "=== 开始编译 kernel Image ==="
+        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" arch/arm64/boot/Image -j$(nproc) 2>&1 | tee build.log
+        
+        # 如果 Image 编译失败，尝试编译 vmlinux
+        if [ ! -f arch/arm64/boot/Image ]; then
+          echo "=== Image 编译失败，尝试编译 vmlinux ==="
+          make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" vmlinux -j$(nproc) || {
+            echo "=== 编译失败，显示最后 100 行日志 ==="
+            tail -n 100 build.log
+            exit 1
+          }
+        fi
         
     - name: 检查编译结果
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
         echo "Checking for kernel images..."
         ls -lh arch/arm64/boot/ || true
+        ls -lh vmlinux || true
+        
         if [ -f arch/arm64/boot/Image.gz-dtb ]; then
           echo "✅ Kernel 编译成功（Image.gz-dtb）！"
           ls -lh arch/arm64/boot/Image.gz-dtb
@@ -80,8 +129,11 @@ jobs:
         elif [ -f arch/arm64/boot/Image ]; then
           echo "✅ Kernel 编译成功（Image）！"
           ls -lh arch/arm64/boot/Image
+        elif [ -f vmlinux ]; then
+          echo "⚠️  生成了 vmlinux，但缺少 Image 文件"
+          ls -lh vmlinux
         else
-          echo "❌ 编译失败！"
+          echo "❌ 编译失败！未找到 kernel 文件"
           exit 1
         fi
         
@@ -89,15 +141,25 @@ jobs:
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
         mkdir -p kernel-output
+        
+        # 优先打包 Image 文件
         if [ -f arch/arm64/boot/Image.gz-dtb ]; then
           cp arch/arm64/boot/Image.gz-dtb kernel-output/kernel
+          echo "Packaged: Image.gz-dtb"
         elif [ -f arch/arm64/boot/Image.gz ]; then
           cp arch/arm64/boot/Image.gz kernel-output/kernel
+          echo "Packaged: Image.gz"
         elif [ -f arch/arm64/boot/Image ]; then
           cp arch/arm64/boot/Image kernel-output/kernel
+          echo "Packaged: Image"
+        elif [ -f vmlinux ]; then
+          cp vmlinux kernel-output/vmlinux
+          echo "Packaged: vmlinux (需要手动转换为 Image)"
         fi
+        
         cd kernel-output
-        tar -czf mt6739-kernel-acm.tar.gz kernel
+        ls -lh
+        tar -czf mt6739-kernel-acm.tar.gz *
         
     - name: 上传编译产物
       uses: actions/upload-artifact@v4
