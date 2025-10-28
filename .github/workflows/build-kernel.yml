@@ -121,7 +121,7 @@ jobs:
           echo "修复 tools/dct/DrvGen.py..."
           
           # 创建 Python 3 兼容的补丁脚本
-          cat > /tmp/fix_drvgen.py << 'PYTHON_SCRIPT'
+          cat > /tmp/fix_drvgen.py <<'PYTHON_SCRIPT'
 import sys
 import re
 
