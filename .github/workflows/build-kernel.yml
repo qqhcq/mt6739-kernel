@@ -25,8 +25,14 @@ jobs:
         
     - name: 配置 Kernel
       run: |
+        pwd
+        ls -la
+        echo "Checking defconfig..."
+        ls -la arch/arm64/configs/ | grep k39tv1
         TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
         echo "TOOLCHAIN=$TOOLCHAIN"
+        echo "Testing toolchain..."
+        ${TOOLCHAIN}gcc --version || echo "Toolchain not found!"
         echo "Running: make ARCH=arm64 CROSS_COMPILE=$TOOLCHAIN k39tv1_64_bsp_defconfig"
         make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" k39tv1_64_bsp_defconfig
         
