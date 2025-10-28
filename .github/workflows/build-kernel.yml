@@ -24,7 +24,12 @@ jobs:
     - name: 安装依赖
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev python2
+        # 设置 python 指向 python2（MediaTek drvgen 需要）
+        sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
+        sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 2
+        sudo update-alternatives --set python /usr/bin/python2
+        python --version
         
     - name: 下载交叉编译工具链
       run: |
