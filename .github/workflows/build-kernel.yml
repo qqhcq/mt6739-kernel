@@ -24,12 +24,7 @@ jobs:
     - name: 安装依赖
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev python2
-        # 设置 python 指向 python2（MediaTek drvgen 需要）
-        sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
-        sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 2
-        sudo update-alternatives --set python /usr/bin/python2
-        python --version
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev python3 python-is-python3 2to3
         
     - name: 下载交叉编译工具链
       run: |
@@ -46,11 +41,16 @@ jobs:
         # 使用 yes "" 自动回答所有配置问题（使用默认值）
         yes "" | make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" oldconfig || true
         
-    - name: 修复 DTC 编译问题
+    - name: 修复编译问题
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
-        # 修复 yylloc 重复定义问题
+        # 修复 DTC yylloc 重复定义问题
         sed -i 's/^YYLTYPE yylloc;$/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c || true
+        # 修复 MediaTek drvgen Python 2 → 3
+        echo "Converting Python 2 scripts to Python 3..."
+        find scripts/drvgen -name '*.py' -exec 2to3 -w {} \; || true
+        # 确保 python 命令可用
+        python --version
         
     - name: 编译 Kernel  
       run: |
