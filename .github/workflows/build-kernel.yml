@@ -39,11 +39,17 @@ jobs:
         ${TOOLCHAIN}gcc --version
         make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" k39tv1_64_bsp_defconfig
         
+    - name: 修复 DTC 编译问题
+      run: |
+        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        # 修复 yylloc 重复定义问题
+        sed -i 's/^YYLTYPE yylloc;$/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c || true
+        
     - name: 编译 Kernel
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
         TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" Image -j$(nproc) || make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" Image.gz -j$(nproc)
+        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" Image -j$(nproc)
         
     - name: 检查编译结果
       run: |
