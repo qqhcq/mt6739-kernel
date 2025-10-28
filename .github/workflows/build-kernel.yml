@@ -41,9 +41,7 @@ jobs:
         if [ -f "tools/dct/DrvGen.py" ]; then
           echo "修复 tools/dct/DrvGen.py..."
           # 添加 cmp 函数定义（Python 3 兼容）
-          sed -i '1a\
-def cmp(a, b):\
-    return (a > b) - (a < b)' tools/dct/DrvGen.py
+          sed -i '1i def cmp(a, b):\n    return (a > b) - (a < b)\n' tools/dct/DrvGen.py
           # 修复 print 语句
           sed -i 's/print \(.*\)/print(\1)/g' tools/dct/DrvGen.py
           # 修复 file() 改为 open()
@@ -56,9 +54,7 @@ def cmp(a, b):\
           # 添加 cmp 函数（如果文件中使用了 cmp）
           if grep -q '\bcmp(' "$file" 2>/dev/null; then
             if ! grep -q 'def cmp(a, b):' "$file"; then
-              sed -i '1a\
-def cmp(a, b):\
-    return (a > b) - (a < b)' "$file"
+              sed -i '1i def cmp(a, b):\n    return (a > b) - (a < b)\n' "$file"
             fi
           fi
           # 修复 print 语句（简单替换）
