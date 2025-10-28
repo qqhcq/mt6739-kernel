@@ -26,12 +26,14 @@ jobs:
     - name: 配置 Kernel
       run: |
         TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
-        make ARCH=arm64 CROSS_COMPILE=$TOOLCHAIN k39tv1_64_bsp_defconfig
+        echo "TOOLCHAIN=$TOOLCHAIN"
+        echo "Running: make ARCH=arm64 CROSS_COMPILE=$TOOLCHAIN k39tv1_64_bsp_defconfig"
+        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" k39tv1_64_bsp_defconfig
         
     - name: 编译 Kernel
       run: |
         TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
-        make ARCH=arm64 CROSS_COMPILE=$TOOLCHAIN -j$(nproc)
+        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" -j$(nproc)
         
     - name: 检查编译结果
       run: |
