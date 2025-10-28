@@ -20,19 +20,21 @@ jobs:
         
     - name: 下载交叉编译工具链
       run: |
-        cd $HOME
+        cd /home/runner
         wget https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
         tar xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-        echo "CROSS_COMPILE=$HOME/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-" >> $GITHUB_ENV
+        echo "CROSS_COMPILE=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-" >> $GITHUB_ENV
         
     - name: 配置 Kernel
       run: |
         export ARCH=arm64
+        export CROSS_COMPILE=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
         make k39tv1_64_bsp_defconfig
         
     - name: 编译 Kernel
       run: |
         export ARCH=arm64
+        export CROSS_COMPILE=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
         make -j$(nproc)
         
     - name: 检查编译结果
