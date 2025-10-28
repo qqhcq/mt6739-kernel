@@ -45,10 +45,8 @@ jobs:
         if [ -f "tools/dct/DrvGen.py" ]; then
           echo "修复 tools/dct/DrvGen.py"
           # 在文件开头添加 cmp 函数
-          echo 'def cmp(a, b):
-    return (a > b) - (a < b)
-' | cat - tools/dct/DrvGen.py > temp && mv temp tools/dct/DrvGen.py
-          # 修复 print 语句 - 只修复明确的 print 语句
+          printf '%s\n%s\n\n' 'def cmp(a, b):' '    return (a > b) - (a < b)' | cat - tools/dct/DrvGen.py > temp && mv temp tools/dct/DrvGen.py
+          # 修复 print 语句
           sed -i "s/print '/print('/g" tools/dct/DrvGen.py
           sed -i 's/print "/print("/g' tools/dct/DrvGen.py
           sed -i 's/, *$/)/g' tools/dct/DrvGen.py
