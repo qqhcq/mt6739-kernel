@@ -86,3 +86,6 @@ Select-String -Path "kernel" -Pattern "usb_f_acm|CONFIG_USB_F_ACM|f_acm"
 如果有输出，说明 ACM 驱动已编译进 kernel！
 
 
+
+2025年10月28日, 星期二 20:24:05
+
