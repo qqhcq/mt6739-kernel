@@ -43,14 +43,19 @@ jobs:
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
         TOOLCHAIN=/home/runner/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
-        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" -j$(nproc)
+        make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" Image -j$(nproc) || make ARCH=arm64 CROSS_COMPILE="$TOOLCHAIN" Image.gz -j$(nproc)
         
     - name: 检查编译结果
       run: |
         cd kernel_5059d_mt6739_tcl/kernel-4.4
+        echo "Checking for kernel images..."
+        ls -lh arch/arm64/boot/ || true
         if [ -f arch/arm64/boot/Image.gz-dtb ]; then
-          echo "✅ Kernel 编译成功！"
+          echo "✅ Kernel 编译成功（Image.gz-dtb）！"
           ls -lh arch/arm64/boot/Image.gz-dtb
+        elif [ -f arch/arm64/boot/Image.gz ]; then
+          echo "✅ Kernel 编译成功（Image.gz）！"
+          ls -lh arch/arm64/boot/Image.gz
         elif [ -f arch/arm64/boot/Image ]; then
           echo "✅ Kernel 编译成功（Image）！"
           ls -lh arch/arm64/boot/Image
@@ -65,6 +70,8 @@ jobs:
         mkdir -p kernel-output
         if [ -f arch/arm64/boot/Image.gz-dtb ]; then
           cp arch/arm64/boot/Image.gz-dtb kernel-output/kernel
+        elif [ -f arch/arm64/boot/Image.gz ]; then
+          cp arch/arm64/boot/Image.gz kernel-output/kernel
         elif [ -f arch/arm64/boot/Image ]; then
           cp arch/arm64/boot/Image kernel-output/kernel
         fi
