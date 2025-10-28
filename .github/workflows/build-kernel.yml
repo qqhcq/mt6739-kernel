@@ -1,0 +1,76 @@
+name: Build MT6739 Kernel with ACM Support
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v3
+      
+    - name: 安装依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev
+        
+    - name: 下载交叉编译工具链
+      run: |
+        cd ~
+        wget https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+        tar xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+        echo "CROSS_COMPILE=~/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-" >> $GITHUB_ENV
+        
+    - name: 配置 Kernel
+      run: |
+        export ARCH=arm64
+        make k39tv1_64_bsp_defconfig
+        
+    - name: 编译 Kernel
+      run: |
+        export ARCH=arm64
+        make -j$(nproc)
+        
+    - name: 检查编译结果
+      run: |
+        if [ -f arch/arm64/boot/Image.gz-dtb ]; then
+          echo "✅ Kernel 编译成功！"
+          ls -lh arch/arm64/boot/Image.gz-dtb
+        elif [ -f arch/arm64/boot/Image ]; then
+          echo "✅ Kernel 编译成功（Image）！"
+          ls -lh arch/arm64/boot/Image
+        else
+          echo "❌ 编译失败！"
+          exit 1
+        fi
+        
+    - name: 打包 Kernel
+      run: |
+        mkdir -p kernel-output
+        if [ -f arch/arm64/boot/Image.gz-dtb ]; then
+          cp arch/arm64/boot/Image.gz-dtb kernel-output/kernel
+        elif [ -f arch/arm64/boot/Image ]; then
+          cp arch/arm64/boot/Image kernel-output/kernel
+        fi
+        cd kernel-output
+        tar -czf mt6739-kernel-acm.tar.gz kernel
+        
+    - name: 上传编译产物
+      uses: actions/upload-artifact@v3
+      with:
+        name: mt6739-kernel-with-acm
+        path: kernel-output/mt6739-kernel-acm.tar.gz
+        
+    - name: 创建 Release
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: kernel-${{ github.run_number }}
+        files: kernel-output/mt6739-kernel-acm.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
