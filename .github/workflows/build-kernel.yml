@@ -20,10 +20,10 @@ jobs:
         
     - name: 下载交叉编译工具链
       run: |
-        cd ~
+        cd $HOME
         wget https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
         tar xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-        echo "CROSS_COMPILE=~/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-" >> $GITHUB_ENV
+        echo "CROSS_COMPILE=$HOME/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-" >> $GITHUB_ENV
         
     - name: 配置 Kernel
       run: |
