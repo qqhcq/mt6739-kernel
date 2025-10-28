@@ -120,8 +120,8 @@ jobs:
         if [ -f "tools/dct/DrvGen.py" ]; then
           echo "修复 tools/dct/DrvGen.py..."
           
-          # 创建 Python 3 兼容的补丁脚本
-          cat > /tmp/fix_drvgen.py <<'PYTHON_SCRIPT'
+          # 直接使用 Python 命令修复文件
+          python3 -c "
 import sys
 import re
 
@@ -143,17 +143,15 @@ if 'def cmp(a, b):' not in content:
             content = content[:first_def] + cmp_func + content[first_def:]
 
 # 修复 print 语句为 print 函数
-content = re.sub(r"print\s+'([^']*)'", r"print('\1')", content)
-content = re.sub(r'print\s+"([^"]*)"', r'print("\1")', content)
+content = re.sub(r\"print\s+'([^']*)'\", r\"print('\1')\", content)
+content = re.sub(r'print\s+\"([^\"]*)\"', r'print(\"\1\")', content)
 
 # 保存修复后的文件
 with open('tools/dct/DrvGen.py', 'w', encoding='utf-8') as f:
     f.write(content)
 
-print("✅ DrvGen.py 修复完成")
-PYTHON_SCRIPT
-          
-          python3 /tmp/fix_drvgen.py
+print('✅ DrvGen.py 修复完成')
+"
         fi
         
         # 修复 DTC yylloc 重复定义问题
