@@ -61,7 +61,8 @@ jobs:
       run: |
         export PATH=$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin:$PATH
         export ARCH=arm64
-        export CROSS_COMPILE="ccache aarch64-linux-gnu-"
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CC="ccache aarch64-linux-gnu-gcc"
         
         # 查找配置
         CONFIG=$(find arch/arm64/configs -name "*6739*" -o -name "*k39tv1*" | head -1)
@@ -95,7 +96,8 @@ jobs:
       run: |
         export PATH=$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin:$PATH
         export ARCH=arm64
-        export CROSS_COMPILE="ccache aarch64-linux-gnu-"
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CC="ccache aarch64-linux-gnu-gcc"
         export KCFLAGS="-w -O2 -pipe -fno-stack-protector"
         export KCPPFLAGS="-w"
         
@@ -192,4 +194,5 @@ jobs:
         name: build-log-${{ github.run_number }}
         path: build.log
         retention-days: 7
+
 
