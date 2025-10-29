@@ -175,29 +175,56 @@ jobs:
         
         echo "✅ 内核配置完成"
         
-        # 启用 USB ACM 串口支持
+        # 启用 USB ACM 串口支持 - 直接修改 .config 文件
         echo "=== 启用 USB 串口支持 ==="
-        scripts/config --enable CONFIG_USB_GADGET
-        scripts/config --enable CONFIG_USB_CONFIGFS
-        scripts/config --enable CONFIG_USB_F_ACM
-        scripts/config --enable CONFIG_USB_F_SERIAL
-        scripts/config --enable CONFIG_USB_G_SERIAL
-        scripts/config --enable CONFIG_USB_SERIAL
-        scripts/config --enable CONFIG_USB_ACM
-        scripts/config --enable CONFIG_USB_F_OBEX
-        scripts/config --enable CONFIG_USB_F_MTP
-        scripts/config --enable CONFIG_USB_CONFIGFS_SERIAL
-        scripts/config --enable CONFIG_USB_CONFIGFS_ACM
-        scripts/config --enable CONFIG_USB_CONFIGFS_OBEX
-        scripts/config --enable CONFIG_USB_CONFIGFS_F_FS
-        scripts/config --enable CONFIG_USB_CONFIGFS_F_MTP
         
-        # 重新生成配置
-        yes "" | make ARCH=${KERNEL_ARCH} CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} oldconfig 2>&1 | head -n 20
+        # 备份原始配置
+        cp .config .config.backup
+        
+        # 定义需要启用的配置选项
+        USB_CONFIGS=(
+          "CONFIG_USB_GADGET"
+          "CONFIG_USB_CONFIGFS"
+          "CONFIG_USB_F_ACM"
+          "CONFIG_USB_F_SERIAL"
+          "CONFIG_USB_G_SERIAL"
+          "CONFIG_USB_SERIAL"
+          "CONFIG_USB_ACM"
+          "CONFIG_USB_F_OBEX"
+          "CONFIG_USB_F_MTP"
+          "CONFIG_USB_CONFIGFS_SERIAL"
+          "CONFIG_USB_CONFIGFS_ACM"
+          "CONFIG_USB_CONFIGFS_OBEX"
+          "CONFIG_USB_CONFIGFS_F_FS"
+          "CONFIG_USB_CONFIGFS_F_MTP"
+          "CONFIG_USB_CONFIGFS_F_ACC"
+        )
+        
+        # 启用所有 USB 串口相关配置
+        for config in "${USB_CONFIGS[@]}"; do
+          # 如果配置项存在但未启用，则启用它
+          if grep -q "^# ${config} is not set" .config; then
+            sed -i "s/^# ${config} is not set/${config}=y/" .config
+            echo "✅ 启用: ${config}"
+          elif grep -q "^${config}=" .config; then
+            # 确保是 =y 而不是 =m
+            sed -i "s/^${config}=.*/${config}=y/" .config
+            echo "✅ 已存在: ${config}"
+          else
+            # 配置项不存在，直接添加
+            echo "${config}=y" >> .config
+            echo "➕ 添加: ${config}"
+          fi
+        done
+        
+        # 重新生成配置，使依赖关系正确
+        echo "=== 重新生成配置 ==="
+        yes "" | make ARCH=${KERNEL_ARCH} CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} oldconfig 2>&1 | head -n 30 || true
         
         # 显示关键配置选项
-        echo "=== 关键配置检查 ==="
-        grep -E "CONFIG_USB_ACM|CONFIG_USB_GADGET|CONFIG_USB_CONFIGFS|CONFIG_USB_F_ACM|CONFIG_USB_SERIAL" .config || echo "注意: 某些 USB 配置可能未启用"
+        echo ""
+        echo "=== 最终配置检查 ==="
+        grep -E "CONFIG_USB_ACM|CONFIG_USB_GADGET|CONFIG_USB_CONFIGFS|CONFIG_USB_F_ACM|CONFIG_USB_SERIAL" .config | head -20 || echo "⚠️ 注意: 某些 USB 配置可能未启用"
         
     - name: 🔨 编译 Kernel
       run: |
@@ -207,41 +234,57 @@ jobs:
         echo "使用 $(nproc) 个 CPU 核心并行编译"
         echo "开始时间: $(date)"
         
-        # 确保日志目录存在
+        # 确保日志文件存在
         touch build.log
         
-        # 编译内核镜像
-        set +e  # 允许命令失败
-        make ARCH=${KERNEL_ARCH} \
-             CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} \
-             -j$(nproc) \
-             Image.gz-dtb 2>&1 | tee build.log
+        # 设置编译参数
+        export ARCH=${KERNEL_ARCH}
+        export CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }}
         
-        if [ ${PIPESTATUS[0]} -eq 0 ]; then
-          echo "✅ Image.gz-dtb 编译成功"
+        BUILD_SUCCESS=false
+        
+        # 尝试编译 Image.gz-dtb（最理想的格式：压缩内核+设备树）
+        echo ""
+        echo ">>> 尝试编译 Image.gz-dtb..."
+        if make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log; then
+          echo "✅ Image.gz-dtb 编译成功！"
           BUILD_SUCCESS=true
+          KERNEL_TARGET="Image.gz-dtb"
         else
-          echo "⚠️ Image.gz-dtb 编译失败，尝试编译 Image"
-          make ARCH=${KERNEL_ARCH} \
-               CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} \
-               -j$(nproc) \
-               Image 2>&1 | tee -a build.log
+          echo "⚠️ Image.gz-dtb 编译失败（可能此内核不支持 dtb），尝试 Image..."
           
-          if [ ${PIPESTATUS[0]} -eq 0 ]; then
-            echo "✅ Image 编译成功"
+          # 不清理，直接尝试编译 Image（未压缩内核）
+          echo ""
+          echo ">>> 尝试编译 Image..."
+          if make -j$(nproc) Image 2>&1 | tee -a build.log; then
+            echo "✅ Image 编译成功！"
             BUILD_SUCCESS=true
+            KERNEL_TARGET="Image"
           else
-            echo "❌ 编译失败"
-            BUILD_SUCCESS=false
+            echo "❌ Image 编译也失败了，尝试最基础的 vmlinux..."
+            
+            # 最后尝试只编译内核本身（最基础格式）
+            echo ""
+            echo ">>> 最后尝试编译 vmlinux..."
+            if make -j$(nproc) vmlinux 2>&1 | tee -a build.log; then
+              echo "✅ vmlinux 编译成功（需要后续处理）"
+              BUILD_SUCCESS=true
+              KERNEL_TARGET="vmlinux"
+            else
+              echo "❌ 所有编译尝试都失败了"
+              BUILD_SUCCESS=false
+            fi
           fi
         fi
         
-        set -e  # 恢复错误退出
+        echo ""
         echo "结束时间: $(date)"
+        echo "编译目标: ${KERNEL_TARGET:-无}"
         
         if [ "$BUILD_SUCCESS" != "true" ]; then
-          echo "=== 编译错误日志（最后 100 行）==="
-          tail -n 100 build.log
+          echo ""
+          echo "=== 编译错误日志（最后 200 行）==="
+          tail -n 200 build.log
           exit 1
         fi
         
