@@ -46,6 +46,7 @@ jobs:
       run: |
         ccache -M 2G
         ccache -z
+        echo "/usr/lib/ccache" >> $GITHUB_PATH
     
     - name: 极速配置（最小化模块）
       run: |
@@ -97,9 +98,9 @@ jobs:
     
     - name: 超高速编译（极致优化）
       run: |
-        export PATH=$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin:$PATH
+        export PATH=/usr/lib/ccache:$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin:$PATH
         export ARCH=arm64
-        export CROSS_COMPILE="ccache aarch64-linux-gnu-"
+        export CROSS_COMPILE=aarch64-linux-gnu-
         export KCFLAGS="-w -O2 -pipe"
         export KCPPFLAGS="-w"
         
