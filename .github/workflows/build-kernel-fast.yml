@@ -1,46 +1,66 @@
-name: Fast Build (Minimal Dependencies)
+name: Ultra Fast Build (Optimized for Speed)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main, master ]
   
 jobs:
   build:
     runs-on: ubuntu-20.04
-    timeout-minutes: 120
+    timeout-minutes: 90
     
     steps:
-    - name: 最大化磁盘空间
+    - name: 检出代码（浅克隆）
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 1
+    
+    - name: 快速清理磁盘（后台）
       run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/share/boost
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /opt/hostedtoolcache
-        sudo docker image prune --all --force
+        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" &
         df -h
     
-    - name: 检出代码
-      uses: actions/checkout@v3
+    - name: 设置 ccache 缓存
+      uses: actions/cache@v3
+      with:
+        path: ~/.ccache
+        key: ccache-ultra-${{ github.sha }}
+        restore-keys: ccache-ultra-
     
-    - name: 安装最小依赖
+    - name: 缓存工具链
+      id: cache-toolchain
+      uses: actions/cache@v3
+      with:
+        path: gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu
+        key: toolchain-linaro-7.5.0-aarch64
+    
+    - name: 快速安装依赖（并行）
       run: |
-        sudo apt-get update -qq
+        sudo apt-get update -qq &
+        wait
         sudo apt-get install -y --no-install-recommends \
           build-essential bc bison flex libssl-dev \
-          libncurses5-dev wget ca-certificates
+          libncurses5-dev ccache wget ca-certificates
     
-    - name: 下载预编译工具链
+    - name: 下载工具链（如果未缓存）
+      if: steps.cache-toolchain.outputs.cache-hit != 'true'
       run: |
         wget -q https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
         tar xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
         rm gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
     
-    - name: 配置内核
+    - name: 配置 ccache
+      run: |
+        ccache -M 2G
+        ccache -z
+        echo "/usr/lib/ccache" >> $GITHUB_PATH
+    
+    - name: 快速配置内核
       run: |
         export PATH=$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin:$PATH
         export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CROSS_COMPILE="ccache aarch64-linux-gnu-"
         
         # 自动查找配置
         CONFIG=$(find arch/arm64/configs -name "*6739*" -o -name "*k39tv1*" | head -1)
@@ -48,13 +68,17 @@ jobs:
         [ -z "$CONFIG" ] && CONFIG="arch/arm64/configs/defconfig"
         
         echo "使用配置: $CONFIG"
-        make $(basename $CONFIG)
+        make -j$(nproc) $(basename $CONFIG)
         
-        # 禁用所有可能导致问题的选项
+        # 禁用所有调试和签名（加速编译）
         scripts/config --disable MODULE_SIG
         scripts/config --disable MODULE_SIG_ALL
         scripts/config --disable SYSTEM_TRUSTED_KEYRING
         scripts/config --disable SYSTEM_TRUSTED_KEYS
+        scripts/config --disable DEBUG_INFO
+        scripts/config --disable DEBUG_INFO_DWARF4
+        scripts/config --disable DEBUG_INFO_BTF
+        scripts/config --disable GDB_SCRIPTS
         
         # 启用 USB ACM
         scripts/config --enable USB_GADGET
@@ -62,27 +86,47 @@ jobs:
         scripts/config --enable USB_CONFIGFS_ACM
         scripts/config --enable USB_F_ACM
         
-        make olddefconfig
+        make -j$(nproc) olddefconfig
     
-    - name: 编译（忽略警告）
+    - name: 超速编译（忽略所有警告）
       run: |
         export PATH=$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin:$PATH
         export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export KCFLAGS="-w"
+        export CROSS_COMPILE="ccache aarch64-linux-gnu-"
+        export KCFLAGS="-w -O2"
+        export KCPPFLAGS="-w"
         
-        make -j$(nproc) Image.gz-dtb || make -j$(nproc) Image.gz || make -j$(nproc) Image
+        # 使用所有核心 + 超线程
+        JOBS=$(($(nproc) * 2))
+        echo "使用 $JOBS 个并行任务编译"
+        
+        make -j$JOBS Image.gz-dtb 2>&1 | grep -v "warning:" || \
+        make -j$JOBS Image.gz 2>&1 | grep -v "warning:" || \
+        make -j$JOBS Image 2>&1 | grep -v "warning:"
+    
+    - name: 显示 ccache 统计
+      run: ccache -s
     
     - name: 打包结果
       run: |
         mkdir output
         find arch/arm64/boot -type f -name "Image*" -exec cp {} output/ \;
-        cp .config output/
+        cp .config output/kernel.config
+        
+        # 创建简要信息
+        cat > output/BUILD_INFO.txt << EOF
+        编译时间: $(date)
+        Commit: ${{ github.sha }}
+        工具链: Linaro GCC 7.5.0
+        已启用: USB ACM 串口支持
+        EOF
+        
         ls -lh output/
     
-    - name: 上传
+    - name: 上传内核
       uses: actions/upload-artifact@v3
       with:
-        name: kernel-fast-build
+        name: kernel-ultra-fast-${{ github.run_number }}
         path: output/*
+        retention-days: 30
 
