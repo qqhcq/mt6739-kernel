@@ -1,0 +1,88 @@
+name: Fast Build (Minimal Dependencies)
+
+on:
+  workflow_dispatch:
+  
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    timeout-minutes: 120
+    
+    steps:
+    - name: 最大化磁盘空间
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/hostedtoolcache
+        sudo docker image prune --all --force
+        df -h
+    
+    - name: 检出代码
+      uses: actions/checkout@v3
+    
+    - name: 安装最小依赖
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+          build-essential bc bison flex libssl-dev \
+          libncurses5-dev wget ca-certificates
+    
+    - name: 下载预编译工具链
+      run: |
+        wget -q https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+        tar xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+        rm gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+    
+    - name: 配置内核
+      run: |
+        export PATH=$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin:$PATH
+        export ARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        
+        # 自动查找配置
+        CONFIG=$(find arch/arm64/configs -name "*6739*" -o -name "*k39tv1*" | head -1)
+        [ -z "$CONFIG" ] && CONFIG=$(find arch/arm64/configs -name "*6763*" | head -1)
+        [ -z "$CONFIG" ] && CONFIG="arch/arm64/configs/defconfig"
+        
+        echo "使用配置: $CONFIG"
+        make $(basename $CONFIG)
+        
+        # 禁用所有可能导致问题的选项
+        scripts/config --disable MODULE_SIG
+        scripts/config --disable MODULE_SIG_ALL
+        scripts/config --disable SYSTEM_TRUSTED_KEYRING
+        scripts/config --disable SYSTEM_TRUSTED_KEYS
+        
+        # 启用 USB ACM
+        scripts/config --enable USB_GADGET
+        scripts/config --enable USB_CONFIGFS
+        scripts/config --enable USB_CONFIGFS_ACM
+        scripts/config --enable USB_F_ACM
+        
+        make olddefconfig
+    
+    - name: 编译（忽略警告）
+      run: |
+        export PATH=$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin:$PATH
+        export ARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export KCFLAGS="-w"
+        
+        make -j$(nproc) Image.gz-dtb || make -j$(nproc) Image.gz || make -j$(nproc) Image
+    
+    - name: 打包结果
+      run: |
+        mkdir output
+        find arch/arm64/boot -type f -name "Image*" -exec cp {} output/ \;
+        cp .config output/
+        ls -lh output/
+    
+    - name: 上传
+      uses: actions/upload-artifact@v3
+      with:
+        name: kernel-fast-build
+        path: output/*
+
