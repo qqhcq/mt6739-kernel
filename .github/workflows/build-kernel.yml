@@ -112,23 +112,45 @@ jobs:
         ${TOOLCHAIN_VERSION}/bin/aarch64-linux-gnu-gcc --version
         echo "✅ 工具链验证成功"
         
-    - name: 🐍 修复 Python 2/3 兼容性
+    - name: 🐍 修复 Python 2/3 兼容性和权限
       run: |
         cd kernel-src
         
-        echo "=== 修复 Python 兼容性问题 ==="
+        echo "=== 修复 Python 兼容性和权限问题 ==="
         
-        # 修复 tools/dct/DrvGen.py（Python 3 兼容性）
+        # 1. 修复 tools/dct/DrvGen.py（Python 3 兼容性 + 执行权限）
         if [ -f "tools/dct/DrvGen.py" ]; then
           echo "修复 tools/dct/DrvGen.py..."
-          # 直接使用 sed 修复 Python 2/3 兼容性问题
+          
+          # 修复 Python 2 到 Python 3 的语法
+          sed -i '1s|^#!/usr/bin/python.*|#!/usr/bin/env python3|' tools/dct/DrvGen.py
           sed -i 's/print /print(/g; s/^\([^#]*\)print(\(.*\))$/\1print(\2)/g' tools/dct/DrvGen.py
-          echo "✅ DrvGen.py 修复完成"
+          
+          # 添加执行权限
+          chmod +x tools/dct/DrvGen.py
+          
+          echo "✅ DrvGen.py 修复完成（语法 + 权限）"
         else
           echo "ℹ️ 未找到 DrvGen.py，跳过"
         fi
         
-        # 修复 DTC yylloc 重复定义问题
+        # 2. 修复 drvgen.mk，让它使用 python3 执行
+        if [ -f "scripts/drvgen/drvgen.mk" ]; then
+          echo "修复 scripts/drvgen/drvgen.mk..."
+          # 将 ./tools/dct/DrvGen.py 替换为 python3 tools/dct/DrvGen.py
+          sed -i 's|\./tools/dct/DrvGen\.py|python3 tools/dct/DrvGen.py|g' scripts/drvgen/drvgen.mk
+          echo "✅ drvgen.mk 修复完成"
+        else
+          echo "ℹ️ 未找到 drvgen.mk，跳过"
+        fi
+        
+        # 3. 给所有 Python 脚本添加执行权限
+        echo "添加 Python 脚本执行权限..."
+        find tools -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
+        find scripts -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
+        echo "✅ Python 脚本权限设置完成"
+        
+        # 4. 修复 DTC yylloc 重复定义问题
         if [ -f "scripts/dtc/dtc-lexer.lex.c" ]; then
           echo "修复 DTC yylloc 重复定义..."
           sed -i 's/^YYLTYPE yylloc;$/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c
@@ -137,7 +159,8 @@ jobs:
           echo "ℹ️ 未找到 dtc-lexer.lex.c，跳过"
         fi
         
-        echo "✅ 所有兼容性问题修复完成"
+        echo ""
+        echo "✅ 所有兼容性和权限问题修复完成"
         
     - name: ⚙️ 配置 Kernel
       run: |
