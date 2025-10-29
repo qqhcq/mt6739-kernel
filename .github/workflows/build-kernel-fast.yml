@@ -2,8 +2,6 @@ name: Ultra Fast Build (Optimized for Speed)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master ]
   
 jobs:
   build:
