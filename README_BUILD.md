@@ -89,3 +89,4 @@ Select-String -Path "kernel" -Pattern "usb_f_acm|CONFIG_USB_F_ACM|f_acm"
 
 2025年10月28日, 星期二 20:24:05
 
+

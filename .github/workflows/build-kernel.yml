@@ -1,4 +1,4 @@
-name: Build MT6739 Kernel with ACM Support
+name: Build MT6739 Kernel (Power535) with ACM Support
 
 on:
   push:
@@ -42,14 +42,16 @@ jobs:
         
     - name: 📥 克隆 Kernel 源码
       run: |
-        echo "正在克隆 MT6739 内核源码..."
-        git clone --depth=1 https://github.com/5059d/kernel_5059d_mt6739_tcl.git
-        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        echo "正在克隆 MT6739 内核源码（Power535 版本）..."
+        git clone --depth=1 https://github.com/Power535/android_kernel_common_MT6763.git kernel-src
+        cd kernel-src
         echo "✅ 源码克隆完成"
         echo "=== 源码目录结构 ==="
         ls -lah
         echo "=== 内核版本信息 ==="
         head -n 5 Makefile
+        echo "=== 检查可用的 defconfig ==="
+        find arch/arm64/configs -name "*6739*" -o -name "*6763*" | head -20
         
     - name: 🔧 安装编译依赖
       run: |
@@ -112,7 +114,7 @@ jobs:
         
     - name: 🐍 修复 Python 2/3 兼容性
       run: |
-        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        cd kernel-src
         
         echo "=== 修复 Python 兼容性问题 ==="
         
@@ -133,9 +135,32 @@ jobs:
         
     - name: ⚙️ 配置 Kernel
       run: |
-        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        cd kernel-src
         
-        echo "=== 使用默认配置: ${DEFCONFIG} ==="
+        # 查找可用的 MT6739 defconfig
+        echo "=== 查找 MT6739 相关配置 ==="
+        AVAILABLE_CONFIGS=$(find arch/arm64/configs -name "*6739*" -o -name "*6763*" | head -10)
+        echo "找到的配置文件："
+        echo "$AVAILABLE_CONFIGS"
+        
+        # 优先使用 MT6739 的配置，否则使用 MT6763 的
+        MT6739_CONFIG=$(find arch/arm64/configs -name "*6739*" | head -1)
+        if [ -n "$MT6739_CONFIG" ]; then
+          DEFCONFIG=$(basename "$MT6739_CONFIG")
+          echo "✅ 使用 MT6739 专用配置: ${DEFCONFIG}"
+        else
+          # 尝试使用 MT6763 配置
+          MT6763_CONFIG=$(find arch/arm64/configs -name "*6763*" | head -1)
+          if [ -n "$MT6763_CONFIG" ]; then
+            DEFCONFIG=$(basename "$MT6763_CONFIG")
+            echo "⚠️ 使用 MT6763 配置: ${DEFCONFIG}"
+          else
+            # 使用环境变量中的默认配置
+            echo "⚠️ 使用默认配置: ${DEFCONFIG}"
+          fi
+        fi
+        
+        echo "=== 应用配置: ${DEFCONFIG} ==="
         make ARCH=${KERNEL_ARCH} CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} ${DEFCONFIG}
         
         echo "=== 应用旧配置选项 ==="
@@ -144,13 +169,33 @@ jobs:
         
         echo "✅ 内核配置完成"
         
+        # 启用 USB ACM 串口支持
+        echo "=== 启用 USB 串口支持 ==="
+        scripts/config --enable CONFIG_USB_GADGET
+        scripts/config --enable CONFIG_USB_CONFIGFS
+        scripts/config --enable CONFIG_USB_F_ACM
+        scripts/config --enable CONFIG_USB_F_SERIAL
+        scripts/config --enable CONFIG_USB_G_SERIAL
+        scripts/config --enable CONFIG_USB_SERIAL
+        scripts/config --enable CONFIG_USB_ACM
+        scripts/config --enable CONFIG_USB_F_OBEX
+        scripts/config --enable CONFIG_USB_F_MTP
+        scripts/config --enable CONFIG_USB_CONFIGFS_SERIAL
+        scripts/config --enable CONFIG_USB_CONFIGFS_ACM
+        scripts/config --enable CONFIG_USB_CONFIGFS_OBEX
+        scripts/config --enable CONFIG_USB_CONFIGFS_F_FS
+        scripts/config --enable CONFIG_USB_CONFIGFS_F_MTP
+        
+        # 重新生成配置
+        yes "" | make ARCH=${KERNEL_ARCH} CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} oldconfig 2>&1 | head -n 20
+        
         # 显示关键配置选项
         echo "=== 关键配置检查 ==="
-        grep -E "CONFIG_USB_ACM|CONFIG_USB_GADGET|CONFIG_USB_CONFIGFS" .config || echo "注意: 某些 USB 配置可能未启用"
+        grep -E "CONFIG_USB_ACM|CONFIG_USB_GADGET|CONFIG_USB_CONFIGFS|CONFIG_USB_F_ACM|CONFIG_USB_SERIAL" .config || echo "注意: 某些 USB 配置可能未启用"
         
     - name: 🔨 编译 Kernel
       run: |
-        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        cd kernel-src
         
         echo "=== 开始编译内核 ==="
         echo "使用 $(nproc) 个 CPU 核心并行编译"
@@ -187,7 +232,7 @@ jobs:
         
     - name: ✅ 检查编译产物
       run: |
-        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        cd kernel-src
         
         echo "=== 检查编译结果 ==="
         
@@ -197,28 +242,28 @@ jobs:
         if [ -f arch/arm64/boot/Image.gz-dtb ]; then
           echo "✅ 找到 Image.gz-dtb (最佳选择)"
           ls -lh arch/arm64/boot/Image.gz-dtb
-          cp arch/arm64/boot/Image.gz-dtb ../kernel_image
+          cp arch/arm64/boot/Image.gz-dtb kernel_image
           KERNEL_FOUND=true
           echo "KERNEL_TYPE=Image.gz-dtb" >> $GITHUB_ENV
           
         elif [ -f arch/arm64/boot/Image.gz ]; then
           echo "✅ 找到 Image.gz"
           ls -lh arch/arm64/boot/Image.gz
-          cp arch/arm64/boot/Image.gz ../kernel_image
+          cp arch/arm64/boot/Image.gz kernel_image
           KERNEL_FOUND=true
           echo "KERNEL_TYPE=Image.gz" >> $GITHUB_ENV
           
         elif [ -f arch/arm64/boot/Image ]; then
           echo "✅ 找到 Image"
           ls -lh arch/arm64/boot/Image
-          cp arch/arm64/boot/Image ../kernel_image
+          cp arch/arm64/boot/Image kernel_image
           KERNEL_FOUND=true
           echo "KERNEL_TYPE=Image" >> $GITHUB_ENV
           
         elif [ -f vmlinux ]; then
           echo "⚠️ 只找到 vmlinux (需要进一步处理)"
           ls -lh vmlinux
-          cp vmlinux ../kernel_image
+          cp vmlinux kernel_image
           KERNEL_FOUND=true
           echo "KERNEL_TYPE=vmlinux" >> $GITHUB_ENV
         fi
@@ -234,14 +279,14 @@ jobs:
         
         # 计算文件哈希
         echo "=== 内核文件信息 ==="
-        file ../kernel_image
-        sha256sum ../kernel_image
+        file kernel_image
+        sha256sum kernel_image
         
     - name: 📤 上传 Kernel 镜像
       uses: actions/upload-artifact@v4
       with:
         name: mt6739-kernel-acm-${{ env.KERNEL_TYPE }}
-        path: kernel_5059d_mt6739_tcl/kernel_image
+        path: kernel-src/kernel_image
         retention-days: 30
         compression-level: 0
         
@@ -250,13 +295,13 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: build-log-${{ github.run_number }}
-        path: kernel_5059d_mt6739_tcl/kernel-4.4/build.log
+        path: kernel-src/build.log
         retention-days: 7
         
     - name: 📊 生成构建摘要
       if: always()
       run: |
-        cd kernel_5059d_mt6739_tcl/kernel-4.4
+        cd kernel-src
         
         echo "## 🔧 MT6739 内核编译摘要" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
@@ -265,11 +310,11 @@ jobs:
         echo "**分支:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
-        if [ -f "../kernel_image" ]; then
+        if [ -f "kernel_image" ]; then
           echo "### ✅ 编译成功" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**内核类型:** \`${KERNEL_TYPE:-未知}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**文件大小:** $(du -h ../kernel_image | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          echo "**文件大小:** $(du -h kernel_image | cut -f1)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 下载" >> $GITHUB_STEP_SUMMARY
           echo "在 Actions 页面的 Artifacts 中下载编译好的内核" >> $GITHUB_STEP_SUMMARY
@@ -283,10 +328,13 @@ jobs:
       if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: v1.0-build-${{ github.run_number }}
-        name: MT6739 Kernel with ACM - Build ${{ github.run_number }}
+        tag_name: v1.0-power535-build-${{ github.run_number }}
+        name: MT6739 Kernel (Power535/MT6763) with ACM - Build ${{ github.run_number }}
         body: |
-          ## 📱 MT6739 Kernel with USB ACM Support
+          ## 📱 MT6739 Kernel (Power535 版本) with USB ACM Support
+          
+          > 基于 Power535/android_kernel_common_MT6763 仓库编译
+          > 支持 MT6580/MT6737/MT6739/MT6750/MT6757c/MT6761/MT6762/MT6763
           
           ### 📋 构建信息
           - **构建编号:** ${{ github.run_number }}
@@ -336,14 +384,14 @@ jobs:
           - 首次刷入可能需要清除缓存
           
           ### 🔗 相关链接
-          - [源码仓库](https://github.com/5059d/kernel_5059d_mt6739_tcl)
+          - [源码仓库](https://github.com/Power535/android_kernel_common_MT6763)
           - [构建日志](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
           
           ---
           
           **自动构建于 GitHub Actions** 🤖
           
-        files: kernel_5059d_mt6739_tcl/kernel_image
+        files: kernel-src/kernel_image
         draft: false
         prerelease: false
       env:
