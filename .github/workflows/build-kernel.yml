@@ -118,10 +118,14 @@ jobs:
         
         echo "=== 修复 Python 兼容性问题 ==="
         
-        # 修复 tools/dct/DrvGen.py
+        # 修复 tools/dct/DrvGen.py（Python 3 兼容性）
         if [ -f "tools/dct/DrvGen.py" ]; then
           echo "修复 tools/dct/DrvGen.py..."
-          python3 $GITHUB_WORKSPACE/.github/scripts/fix_drvgen.py
+          # 直接使用 sed 修复 Python 2/3 兼容性问题
+          sed -i 's/print /print(/g; s/^\([^#]*\)print(\(.*\))$/\1print(\2)/g' tools/dct/DrvGen.py
+          echo "✅ DrvGen.py 修复完成"
+        else
+          echo "ℹ️ 未找到 DrvGen.py，跳过"
         fi
         
         # 修复 DTC yylloc 重复定义问题
@@ -129,6 +133,8 @@ jobs:
           echo "修复 DTC yylloc 重复定义..."
           sed -i 's/^YYLTYPE yylloc;$/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c
           echo "✅ DTC yylloc 修复完成"
+        else
+          echo "ℹ️ 未找到 dtc-lexer.lex.c，跳过"
         fi
         
         echo "✅ 所有兼容性问题修复完成"
@@ -201,20 +207,28 @@ jobs:
         echo "使用 $(nproc) 个 CPU 核心并行编译"
         echo "开始时间: $(date)"
         
+        # 确保日志目录存在
+        touch build.log
+        
         # 编译内核镜像
-        if make ARCH=${KERNEL_ARCH} \
-                CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} \
-                -j$(nproc) \
-                Image 2>&1 | tee build.log; then
-          echo "✅ Image 编译成功"
+        set +e  # 允许命令失败
+        make ARCH=${KERNEL_ARCH} \
+             CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} \
+             -j$(nproc) \
+             Image.gz-dtb 2>&1 | tee build.log
+        
+        if [ ${PIPESTATUS[0]} -eq 0 ]; then
+          echo "✅ Image.gz-dtb 编译成功"
           BUILD_SUCCESS=true
         else
-          echo "⚠️ Image 编译失败，尝试编译 vmlinux"
-          if make ARCH=${KERNEL_ARCH} \
-                  CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} \
-                  -j$(nproc) \
-                  vmlinux 2>&1 | tee -a build.log; then
-            echo "✅ vmlinux 编译成功"
+          echo "⚠️ Image.gz-dtb 编译失败，尝试编译 Image"
+          make ARCH=${KERNEL_ARCH} \
+               CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }} \
+               -j$(nproc) \
+               Image 2>&1 | tee -a build.log
+          
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo "✅ Image 编译成功"
             BUILD_SUCCESS=true
           else
             echo "❌ 编译失败"
@@ -222,6 +236,7 @@ jobs:
           fi
         fi
         
+        set -e  # 恢复错误退出
         echo "结束时间: $(date)"
         
         if [ "$BUILD_SUCCESS" != "true" ]; then
