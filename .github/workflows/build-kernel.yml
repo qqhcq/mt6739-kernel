@@ -14,7 +14,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     timeout-minutes: 120
     
     steps:
@@ -73,6 +73,9 @@ jobs:
           lzop \
           zip \
           unzip
+        
+        # 显示 OpenSSL 版本（ubuntu-20.04 自带 OpenSSL 1.1，完美兼容老内核）
+        openssl version
         echo "✅ 依赖安装完成"
         
     - name: 💾 缓存交叉编译工具链
@@ -263,6 +266,18 @@ jobs:
         # 设置编译参数
         export ARCH=${KERNEL_ARCH}
         export CROSS_COMPILE=${{ env.TOOLCHAIN_PATH }}
+        
+        # 忽略 OpenSSL 废弃警告（兼容 OpenSSL 3.0）
+        export KCFLAGS="-Wno-deprecated-declarations -Wno-error=deprecated-declarations"
+        export HOSTCFLAGS="-Wno-deprecated-declarations -Wno-error=deprecated-declarations"
+        
+        # 修复 Makefile 中的 OpenSSL 编译选项
+        if grep -q "scripts/extract-cert" Makefile; then
+          echo "修复 Makefile 的 OpenSSL 编译选项..."
+          sed -i '/HOSTCFLAGS_extract-cert/d' scripts/Makefile
+          echo 'HOSTCFLAGS_extract-cert.o = -Wno-deprecated-declarations' >> scripts/Makefile
+          echo "✅ OpenSSL 编译选项修复完成"
+        fi
         
         BUILD_SUCCESS=false
         
